@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+option go_package = "users/henry/desktop/Monitoror/send";
+
+package send;
+
+service Sender { // register
+  rpc SendData (SendRequest) returns (SendResponse) {} // rpc函数签名, server中需定义该函数
+}
+
+message SendRequest {
+  string hostname = 1;
+}
+
+message SendResponse {
+  int32 cpuid = 1;
+  int32 pcore = 2;
+  int32 lcore = 3;
+  double occupancy = 4;
+  double Mhz = 5;
+  int32 CacheSize = 6;
+  string receiver = 7;
+}
