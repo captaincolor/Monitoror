@@ -20,7 +20,7 @@ const (
 	SERVER   = "localhost"
 	MYSQLPORT = 3306
 	DATABASE = "Serverinfo"
-	RPCPORT = "5050"
+	RPCPORT = ":5050"
 )
 
 type cpuInfo struct {
@@ -61,28 +61,12 @@ func (s *SendService) SendData (ctx context.Context, in *pb.SendRequest) (*pb.Se
 }
 
 func main() {
-	// 写入mysql
-	//cpuCurrentStat := visorCPU()
-	//dSN := fmt.Sprintf("%s:%s@%s(%s:%d)/%s",USERNAME,PASSWORD,NETWORK,SERVER,MYSQLPORT,DATABASE)
-	//db, err := sql.Open("mysql", dSN)
-	//if err != nil {
-	//	log.Println("open mysql failed, ", err)
-	//	return
-	//}
-	//err = db.Ping()
-	//if err != nil {
-	//	log.Println("ping failed, ", err)
-	//	return
-	//}
-	//insertData(db, cpuCurrentStat)
-	//defer db.Close()
-
+	// rpc
 	// 创建listen(), 监听tcp端口
-	lis, err := net.Listen("tcp", ":"+RPCPORT)
+	lis, err := net.Listen("tcp", RPCPORT)
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
-
 	server := grpc.NewServer() // 创建gRPC Server对象
 	// 将SendService注册到Server的内部注册中心
 	// 接收到请求时, 可通过服务发现, 发现接口并转接进行处理
@@ -91,6 +75,21 @@ func main() {
 		log.Fatalf("failed to serve: %v", err)
 	}
 
+	// 写入mysql
+	cpuCurrentStat := visorCPU()
+	dSN := fmt.Sprintf("%s:%s@%s(%s:%d)/%s",USERNAME,PASSWORD,NETWORK,SERVER,MYSQLPORT,DATABASE)
+	db, err := sql.Open("mysql", dSN)
+	defer db.Close()
+	if err != nil {
+		log.Println("open mysql failed, ", err)
+		return
+	}
+	err = db.Ping()
+	if err != nil {
+		log.Println("ping failed, ", err)
+		return
+	}
+	insertData(db, cpuCurrentStat)
 }
 
 func visorCPU() cpuInfo {
