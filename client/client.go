@@ -31,7 +31,7 @@ func main() {
 	defer cancel()
 	resp, err := client.SendData(ctx, &pb.SendRequest{Hostname: name})
 	if err != nil {
-		log.Fatalf("client.Send err: %v", err)
+		log.Fatalf("client.Send failed: %v", err)
 	}
 	// 输出结果
 	log.Printf("cpu usage from %s,\n cpuID:%d, pcore:%d, lcore:%d, occupy:%g, mhz:%g, cachesize:%d, succ", resp.GetReceiver(), resp.GetCpuid(), resp.GetPcore(), resp.GetLcore(), resp.GetOccupancy(), resp.GetMhz(), resp.GetCacheSize())

@@ -39,28 +39,63 @@ type SendService struct {
 // 方案1.rpc函数内部调用visorCpu()
 // 方案2.main()中, rpc函数接收visorCpu()结果
 // 方案3.visorCpu_RPC()
-// 这里检测到的cpu状况是server的还是client的？
+// 这里检测到的cpu状况是server的还是client的？(server的)
 func (s *SendService) SendData (ctx context.Context, in *pb.SendRequest) (*pb.SendResponse, error) {
-	pcore, _ := cpu.Counts(false)
-	lcore, _ := cpu.Counts(true)
-
-	seconds := 5
-	occupancy, _ := cpu.Percent(time.Duration(seconds)*time.Second, false) // false, 总cpu使用率
-
-	cpuStat, _ := cpu.Info()
-
+	// 连接Mysql
+	dSN := fmt.Sprintf("%s:%s@%s(%s:%d)/%s",USERNAME,PASSWORD,NETWORK,SERVER,MYSQLPORT,DATABASE)
+	db, err := sql.Open("mysql", dSN)
+	defer db.Close()
+	if err != nil {
+		log.Println("open mysql failed, ", err)
+	}
+	err = db.Ping() // 尝试ping
+	if err != nil {
+		log.Println("ping failed, ", err)
+	}
+	// 查询mysql
+	res, err := db.Query("SELECT * from cpuinfo where cpu_id = (SELECT max(cpu_id) FROM cpuinfo)")
+	defer res.Close()
+	if err != nil {
+		log.Fatalf("Query failed: %v", err) 
+	}
+	var resp cpuInfo
+	for res.Next() {
+		err := res.Scan(&resp.cpuid, &resp.pcore, &resp.lcore, &resp.occupancy, &resp.Mhz, &resp.CacheSize)
+		if err != nil {
+			log.Fatalf("Query Scan failed: %v", err)
+		}
+	}
 	return &pb.SendResponse {
-		Cpuid: cpuStat[0].CPU,
-		Pcore: int32(pcore),
-		Lcore: int32(lcore),
-		Occupancy: occupancy[0],
-		Mhz: cpuStat[0].Mhz,
-		CacheSize: cpuStat[0].CacheSize,
+		Cpuid: resp.cpuid,
+		Pcore: int32(resp.pcore),
+		Lcore: int32(resp.lcore),
+		Occupancy: resp.occupancy,
+		Mhz: resp.Mhz,
+		CacheSize: resp.CacheSize,
 		Receiver: in.GetHostname(),
 	}, nil
 }
 
 func main() {
+	// 连接mysql
+	dSN := fmt.Sprintf("%s:%s@%s(%s:%d)/%s",USERNAME,PASSWORD,NETWORK,SERVER,MYSQLPORT,DATABASE)
+	db, err := sql.Open("mysql", dSN)
+	defer db.Close()
+	if err != nil {
+		log.Println("open mysql failed, ", err)
+	}
+	err = db.Ping() // 尝试ping
+	if err != nil {
+		log.Println("ping failed, ", err)
+	}
+	// 协程每5秒采集cpu数据,并把数据insert到mysql
+	go func() {
+		for {
+			cpuCurrentStat := visorCPU() // 采集cpu数据
+			insertData(db, cpuCurrentStat) // 插入cpu数据到mysql
+		}
+	}()
+
 	// rpc
 	// 创建listen(), 监听tcp端口
 	lis, err := net.Listen("tcp", RPCPORT)
@@ -74,22 +109,6 @@ func main() {
 	if err := server.Serve(lis); err != nil { // server开始accept, 直到stop
 		log.Fatalf("failed to serve: %v", err)
 	}
-
-	// 写入mysql
-	cpuCurrentStat := visorCPU()
-	dSN := fmt.Sprintf("%s:%s@%s(%s:%d)/%s",USERNAME,PASSWORD,NETWORK,SERVER,MYSQLPORT,DATABASE)
-	db, err := sql.Open("mysql", dSN)
-	defer db.Close()
-	if err != nil {
-		log.Println("open mysql failed, ", err)
-		return
-	}
-	err = db.Ping()
-	if err != nil {
-		log.Println("ping failed, ", err)
-		return
-	}
-	insertData(db, cpuCurrentStat)
 }
 
 func visorCPU() cpuInfo {
@@ -97,8 +116,8 @@ func visorCPU() cpuInfo {
 	lcore, _ := cpu.Counts(true)
 	//fmt.Printf("物理核数: %v, 逻辑核数: %v \n", physicCore, logicCore)
 
-	seconds := 5
-	occupancy, _ := cpu.Percent(time.Duration(seconds)*time.Second, false) // false, 总cpu使用率
+	//seconds := 1
+	occupancy, _ := cpu.Percent(time.Second, false) // false, 总cpu使用率
 	//fmt.Printf("cpu总占用率: %v \n", cpuOccupancy[0])
 
 	cpuStat, _ := cpu.Info()
@@ -127,3 +146,4 @@ func insertData(db *sql.DB, cpuinfo cpuInfo) {
 	}
 	fmt.Println("insert succ: ", id)
 }
+
